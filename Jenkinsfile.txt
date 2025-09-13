@@ -7,97 +7,71 @@ pipeline {
         stage('Verify Tools') {
             steps {
                 echo "Verifying Java, Maven, Git, and Docker versions"
-                sh """
-
-
-                    # Maven check
-                    MAVEN_VER=\$(mvn -v | awk 'NR==1{print \$3}')
-                    echo "Detected Maven version: \$MAVEN_VER"
-                    MAVEN_MAJOR=\$(echo \$MAVEN_VER | awk -F. '{print \$1}')
-                    if [ "\$MAVEN_MAJOR" -lt 3 ]; then
-                        echo "ERROR: Maven 3.x or higher is required!"
-                        exit 1
-                    fi
-
-                    # Git check
-                    GIT_VER=\$(git --version | awk '{print \$3}')
-                    echo "Detected Git version: \$GIT_VER"
-                    GIT_MAJOR=\$(echo \$GIT_VER | awk -F. '{print \$1}')
-                    if [ "\$GIT_MAJOR" -lt 2 ]; then
-                        echo "ERROR: Git 2.x or higher is required!"
-                        exit 1
-                    fi
-
-                    # Docker check
-                    DOCKER_VER=\$(docker --version | awk '{print \$3}' | sed 's/,//')
-                    echo "Detected Docker version: \$DOCKER_VER"
-                    DOCKER_MAJOR=\$(echo \$DOCKER_VER | awk -F. '{print \$1}')
-                    if [ "\$DOCKER_MAJOR" -lt 20 ]; then
-                        echo "ERROR: Docker 20.x or higher is required!"
-                        exit 1
-                    fi
-                """
+                bat '''
+                    echo Checking Maven version...
+                    mvn -v
+                    echo Checking Git version...
+                    git --version
+                    echo Checking Docker version...
+                    docker --version
+                '''
             }
         }
 
         stage('Compile and Clean') {
             steps {
-                sh 'mvn clean compile'
+                bat 'mvn clean compile'
             }
         }
 
         stage('Package') {
             steps {
-                sh 'mvn package'
+                bat 'mvn package'
             }
         }
 
         stage('Docker Cleanup') {
             steps {
                 echo "Cleaning up old Docker containers and images"
-                sh """
-                    # Stop any container using port 8088
-                    OLD_CONTAINER=\$(docker ps -q -f "publish=8088")
-                    if [ ! -z "\$OLD_CONTAINER" ]; then
-                        echo "Stopping old container: \$OLD_CONTAINER"
-                        docker stop \$OLD_CONTAINER
-                        docker rm \$OLD_CONTAINER
-                    fi
+                bat '''
+                    FOR /F "tokens=*" %%i IN ('docker ps -q -f "publish=8088"') DO (
+                        echo Stopping old container %%i
+                        docker stop %%i
+                        docker rm %%i
+                    )
 
-                    # Remove old images with the same name
-                    OLD_IMAGE=\$(docker images -q abinayaravichandran/demo-app)
-                    if [ ! -z "\$OLD_IMAGE" ]; then
-                        echo "Removing old image: \$OLD_IMAGE"
-                        docker rmi -f \$OLD_IMAGE
-                    fi
-                """
+                    FOR /F "tokens=*" %%i IN ('docker images -q abinayaravichandran/demo-app') DO (
+                        echo Removing old image %%i
+                        docker rmi -f %%i
+                    )
+                '''
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 echo "Building Docker image"
-                sh 'docker build -t abinayaravichandran/demo-app:${BUILD_NUMBER} .'
+                bat "docker build -t abinayaravichandran/demo-app:%BUILD_NUMBER% ."
             }
         }
 
         stage('Docker Login') {
             steps {
-                withCredentials([string(credentialsId: 'DockerId', variable: 'Abinaya@123')]) {
-                    sh 'docker login -u abinayaravichandran -p ${Abinaya@123}'
+                withCredentials([usernamePassword(credentialsId: 'DockerId', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    bat "docker login -u %DOCKER_USER% -p %DOCKER_PASS%"
                 }
             }
         }
 
         stage('Docker Push') {
             steps {
-                sh 'docker push abinayaravichandran/demo-app:${BUILD_NUMBER}'
+                bat "docker push abinayaravichandran/demo-app:%BUILD_NUMBER%"
             }
         }
 
         stage('Docker Deploy') {
             steps {
-                sh 'docker run -itd -p 8088:8088 abinayaravichandran/demo-app:${BUILD_NUMBER}'
+                bat "docker run -itd -p 8088:8088 abinayaravichandran/demo-app:%BUILD_NUMBER%"
             }
         }
 
